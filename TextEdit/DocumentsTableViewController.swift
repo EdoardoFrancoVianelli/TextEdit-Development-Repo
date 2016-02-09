@@ -9,16 +9,16 @@
 import UIKit
 import LocalAuthentication
 
+let CellIdentifier = "DocumentCellIdentifier"
+let DocumentSegueIdentifier = "DocumentViewSegue"
+let FileSegue = "FileDetailSegue"
+let PDFSegue = "PDFSegue"
+
 class DocumentsTableViewController: UITableViewController, UISearchBarDelegate {
 
     var AllSearchedFolderElements = [FolderElement]()
     var searching = false
     var _new_file : TextFile?
-
-    let CellIdentifier = "DocumentCellIdentifier"
-    let DocumentSegueIdentifier = "DocumentViewSegue"
-    let FileSegue = "FileDetailSegue"
-    let PDFSegue = "PDFSegue"
 
     @IBOutlet weak var SearchBar: UISearchBar!
     @IBOutlet weak var ReturnToFolderButton: UIBarButtonItem!
@@ -29,7 +29,21 @@ class DocumentsTableViewController: UITableViewController, UISearchBarDelegate {
 
     var FolderStack = [Folder]()
 
+    var pt_board : [FolderElement]?
+
     var Pasteboard : [FolderElement]?
+    {
+        get
+        {
+            return self.pt_board
+        }
+        set
+        {
+            self.pt_board = newValue
+            self.moreButton.enabled = self.pt_board != nil
+        }
+    }
+
     var Copying = false
 
     @IBOutlet weak var moreButton: UIBarButtonItem!
@@ -44,23 +58,56 @@ class DocumentsTableViewController: UITableViewController, UISearchBarDelegate {
         self.UpdateBackButton()
     }
 
-    func CopySelection()
+    func CopySelection(copying : Bool)
     {
-        self.Pasteboard = [FolderElement]()
-
         if let SelectedIndices = self.tableView.indexPathsForSelectedRows
         {
             for IndexPath in SelectedIndices
             {
                 if let toAdd = self.FolderStack.last?.Contents[IndexPath.row]
                 {
-                    self.Pasteboard?.append(toAdd)
+                    self.CopyElement(toAdd, copy: copying)
                 }
             }
-            self.moreButton.enabled = true
         }
     }
 
+    func CopyElement(element : FolderElement, copy : Bool)
+    {
+        if self.Pasteboard == nil
+        {
+            self.Pasteboard = [FolderElement]()
+        }
+        self.Pasteboard?.append(element)
+    }
+
+    func PasteElement(item : FolderElement)
+    {
+        let fileManager = NSFileManager()
+
+        let OldPath = item.Path
+        let NewPath = self.FolderStack.last!.Path
+
+        do
+        {
+            try fileManager.copyItemAtPath(OldPath, toPath: NewPath + "/" + item.Name)
+        }
+        catch
+        {
+            print(error)
+        }
+
+        if !self.Copying
+        {
+            do { try fileManager.removeItemAtPath(item.Path) }
+            catch {
+                //print(error)
+            }
+            self.Pasteboard = nil
+        }
+
+        self.LoadDocumentsFromRefresh()
+    }
 
     @IBAction func ViewMore(sender: AnyObject)
     {
@@ -69,52 +116,23 @@ class DocumentsTableViewController: UITableViewController, UISearchBarDelegate {
 
         let MoreViewer = UIAlertController(title: "Select an action", message: nil, preferredStyle: UIAlertControllerStyle.Alert)
         MoreViewer.addAction(UIAlertAction(title: "Copy", style: UIAlertActionStyle.Default, handler: { (action : UIAlertAction!) in
-
-            self.CopySelection()
-            self.Copying = true
-
+            self.CopySelection(true)
         }))
-        MoreViewer.addAction(UIAlertAction(title: "Move", style: UIAlertActionStyle.Default, handler: {(action : UIAlertAction) in
 
-            self.CopySelection()
-            self.Copying = false
-
-        }))
+        if self.Copying == false
+        {
+            MoreViewer.addAction(UIAlertAction(title: "Move", style: UIAlertActionStyle.Default, handler: {(action : UIAlertAction) in
+                self.CopySelection(false)
+            }))
+        }
 
         if let ItemsToPaste = self.Pasteboard
         {
             MoreViewer.addAction(UIAlertAction(title: "Paste", style: UIAlertActionStyle.Default, handler: { (action : UIAlertAction!) in
-
-                let fileManager = NSFileManager()
-
-                //print(ItemsToPaste)
-
                 for item in ItemsToPaste
                 {
-                    let OldPath = item.Path
-                    let NewPath = self.FolderStack.last!.Path
-
-                    do
-                    {
-                        try fileManager.copyItemAtPath(OldPath, toPath: NewPath + "/" + item.Name)
-                    }
-                    catch
-                    {
-                        print(error)
-                    }
-
-                    if !self.Copying
-                    {
-                        do { try fileManager.removeItemAtPath(item.Path) }
-                        catch {
-                            //print(error)
-                        }
-                        self.Pasteboard = nil
-                    }
+                    self.PasteElement(item)
                 }
-
-                self.LoadDocumentsFromRefresh()
-
             }))
         }
 
@@ -181,10 +199,7 @@ class DocumentsTableViewController: UITableViewController, UISearchBarDelegate {
 
         if searchText == ""
         {
-            if let CurrentContents = self.FolderStack.last?.Contents
-            {
-                self.AllSearchedFolderElements = CurrentContents
-            }
+            self.AllSearchedFolderElements = self.FolderStack.last!.Contents
         }
         else
         {
@@ -232,8 +247,6 @@ class DocumentsTableViewController: UITableViewController, UISearchBarDelegate {
 
         self.InitializePullToRefreshFiles()
 
-        self.moreButton.enabled = self.Pasteboard != nil
-
         if self.FolderStack.isEmpty
         {
             self.FolderStack = [Folder]()
@@ -242,7 +255,7 @@ class DocumentsTableViewController: UITableViewController, UISearchBarDelegate {
 
         self.GlobalSettings.LoadSettings()
 
-        //Get the policy for deletion prompts
+        self.Pasteboard = nil
 
         self.EvaluateDeletionPolicy()
 
@@ -252,7 +265,6 @@ class DocumentsTableViewController: UITableViewController, UISearchBarDelegate {
     func EditTableView(sender : UIBarButtonItem)
     {
         self.tableView.editing = !self.tableView.editing
-        self.moreButton.enabled = false
         if self.tableView.editing{ sender.title = "Done" }
         else { sender.title = "Edit" }
     }
@@ -340,15 +352,16 @@ class DocumentsTableViewController: UITableViewController, UISearchBarDelegate {
     override func tableView(tableView: UITableView, editActionsForRowAtIndexPath indexPath: NSIndexPath) -> [UITableViewRowAction]? {
         let copy_action = UITableViewRowAction(style: UITableViewRowActionStyle.Default, title: "Copy", handler: {(action : UITableViewRowAction, index_path : NSIndexPath) in
 
-            //self.copyFiles([indexPath], false)
-
+            self.CopyElement(self.FolderStack.last!.Contents[indexPath.row], copy:true)
+            tableView.reloadData()
         })
         copy_action.backgroundColor = UIColor.grayColor()
 
         let move_action = UITableViewRowAction(style: UITableViewRowActionStyle.Default, title: "Move", handler: {(action : UITableViewRowAction, index_path : NSIndexPath) in
 
-            //self.copyFiles([indexPath], true)
-
+            self.CopyElement(self.FolderStack.last!.Contents[indexPath.row], copy:true)
+            self.Copying = false
+            tableView.reloadData()
         })
         move_action.backgroundColor = UIColor.orangeColor()
 
@@ -357,15 +370,15 @@ class DocumentsTableViewController: UITableViewController, UISearchBarDelegate {
             (action : UITableViewRowAction, index_path : NSIndexPath) in
 
             self.DeleteItem(index_path)
+            tableView.reloadData()
         })
         delete_action.backgroundColor = UIColor.redColor()
-
-
         return [copy_action, move_action, delete_action]
     }
 
     func DeleteItem(indexPath : NSIndexPath)
     {
+        self.UpdateBackButton()
         if let CurrentElementToDelete = self.FolderStack.last?.Contents[indexPath.row]
         {
             if self.PromptBeforeDeletion
@@ -404,6 +417,8 @@ class DocumentsTableViewController: UITableViewController, UISearchBarDelegate {
         self.FolderStack.last?.RemoveFileAtIndex(indexPath.row)
 
         tableView.endUpdates()
+
+        self.UpdateBackButton()
     }
 
     override func tableView(tableView: UITableView, cellForRowAtIndexPath indexPath: NSIndexPath) -> UITableViewCell {
@@ -515,7 +530,6 @@ class DocumentsTableViewController: UITableViewController, UISearchBarDelegate {
         {
             self.moreButton.enabled = count > 0
         }
-
     }
 
     override func tableView(tableView: UITableView, didDeselectRowAtIndexPath indexPath: NSIndexPath) {
@@ -618,7 +632,7 @@ class DocumentsTableViewController: UITableViewController, UISearchBarDelegate {
         {
             self.LoadDocuments(self.FolderStack.last)
             self._new_file = NewFile
-            self.performSegueWithIdentifier(self.DocumentSegueIdentifier, sender: self)
+            self.performSegueWithIdentifier(DocumentSegueIdentifier, sender: self)
         }
         else
         {
@@ -660,13 +674,11 @@ class DocumentsTableViewController: UITableViewController, UISearchBarDelegate {
         do
         {
             let ContentsOfCurrentDirectory = try FileManager.contentsOfDirectoryAtPath(DirectoryPath)
-            //print(ContentsOfCurrentDirectory)
             for document in ContentsOfCurrentDirectory
             {
                 let Pieces = document.componentsSeparatedByString(".")
                 if Pieces.count >= 2 // a file
                 {
-                    //print("\(document) is a file")
                     let Extension = Pieces[Pieces.count-1]
                     if (AllowedExtensions.contains(Extension))
                     {
@@ -679,7 +691,6 @@ class DocumentsTableViewController: UITableViewController, UISearchBarDelegate {
                 }
                 else // a folder
                 {
-                    //print("\(document) is a folder")
                     let NewFolder = Folder(path: DirectoryPath + "/" + "\(document)", name: document)
                     self.FolderStack.last?.AddFolderElement(NewFolder)
                 }
@@ -704,6 +715,7 @@ class DocumentsTableViewController: UITableViewController, UISearchBarDelegate {
                 self.refreshControl?.endRefreshing()
             }
         }
+        self.UpdateBackButton()
     }
 
     private func RemoveItem(element : FolderElement)
@@ -743,7 +755,6 @@ class DocumentsTableViewController: UITableViewController, UISearchBarDelegate {
         {
             self.FolderStack.append(folder)
         }
-        //print(self.FolderStack)
         self.FolderStack.last?.ResetContents()
         self.LoadDocuments(folder)
         self.tableView.reloadData()

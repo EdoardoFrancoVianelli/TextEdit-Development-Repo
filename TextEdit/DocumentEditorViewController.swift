@@ -44,12 +44,10 @@ class DocumentEditorViewController : UIViewController, UITextViewDelegate, UIPop
 
         self.FileDisplayer.delegate = self
         self.InitializeUpperRightControls()
-        self.setupKeyboardNotifications()
     }
 
     func ThumbnailName(file : TextFile) -> String
     {
-
         return file.Path + "-Thumbnail.jpg"
     }
 
@@ -240,33 +238,6 @@ class DocumentEditorViewController : UIViewController, UITextViewDelegate, UIPop
         let Image = UIGraphicsGetImageFromCurrentImageContext()
         UIGraphicsEndImageContext()
         return Image
-    }
-
-    func setupKeyboardNotifications() {
-        NSNotificationCenter.defaultCenter().addObserver(self, selector: Selector("keyboardWasShown:"), name: UIKeyboardDidShowNotification, object: nil)
-        NSNotificationCenter.defaultCenter().addObserver(self, selector: Selector("keyboardWillBeHidden:"), name: UIKeyboardWillHideNotification, object: nil)
-    }
-
-    /*
-        
-        https://developer.apple.com/library/ios/documentation/StringsTextFonts/Conceptual/TextAndWebiPhoneOS/KeyboardManagement/KeyboardManagement.html#//apple_ref/doc/uid/TP40009542-CH5-SW7
-
-    */
-
-    func keyboardWasShown(aNotification:NSNotification) {
-        if let info = aNotification.userInfo
-        {
-            if let infoNSValue = info[UIKeyboardFrameBeginUserInfoKey] as? NSValue
-            {
-                let kbSize = infoNSValue.CGRectValue().size
-                //print(kbSize)
-            }
-        }
-    }
-
-    func keyboardWillBeHidden(aNotification:NSNotification) {
-        self.FileDisplayer.contentInset = UIEdgeInsetsZero;
-        self.FileDisplayer.scrollIndicatorInsets = UIEdgeInsetsZero;
     }
 
     func textViewDidChange(textView: UITextView)
